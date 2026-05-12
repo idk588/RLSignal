@@ -1,0 +1,44 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+
+# SUMO simulation dataset (network, routes, detectors)
+Malta/data/
+Sioux/data/
+
+# Pickle cache files
+*.pkl
+
+# Trained model checkpoints
+Malta/*/model/
+Malta/model/
+Sioux/*/model/
+Sioux/model/
+
+# TensorBoard event files and training logs
+Malta/*/log/
+Malta/log/
+Sioux/*/log/
+Sioux/log/
+
+# Evaluation logs
+Malta/*/eva_log/
+Sioux/*/eva_log/
+
+# Runtime config copies written during training
+Malta/*/data/
+Sioux/*/data/
+
+# SUMO runtime output files
+Malta_signal_route_trip.xml
+Sioux_signal_route_trip.xml
+sumo_errors.txt
+output.txt
+
+# Claude IDE settings
+.claude/

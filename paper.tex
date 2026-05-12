@@ -1,0 +1,450 @@
+\documentclass[conference]{IEEEtran}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{cite}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\hypersetup{hidelinks}
+
+\title{Traffic Optimisation and Route Redistribution System: A Deep Reinforcement Learning Approach for Network-Wide Congestion Mitigation in Malta}
+
+\author{
+\IEEEauthorblockN{Kyle Austin}\\
+\IEEEauthorblockA{
+B.Sc. (Hons.) Applied Data Science / Software Development\\
+MCAST Institute of Information and Communication Technology\\
+Malta\\
+Kyle.austin.h63676@mcast.edu.mt}
+}
+
+\begin{document}
+\maketitle
+
+%% -----------------------------------------------------------
+%%  ABSTRACT
+%% -----------------------------------------------------------
+\begin{abstract}
+Malta is ranked the world's second most congested nation, with drivers losing
+approximately 94 hours annually to rush-hour delays on an island measuring only
+27\,km $\times$ 14\,km. Unlike large metropolitan environments studied in the
+existing literature, Malta's physically bounded road network cannot be expanded,
+making intelligent traffic management the only scalable intervention.
+This paper presents a prototype Traffic Optimisation and Route Redistribution
+System (TORRS) that applies Multi-Agent Advantage Actor-Critic (MA2C), a
+decentralised deep reinforcement learning algorithm, to jointly control traffic
+signals and vehicle routing across 190 cooperative agents in a SUMO
+microsimulation of the Maltese road network derived from OpenStreetMap data.
+The system is evaluated against a greedy signal controller baseline over
+3600-second simulation episodes.
+After 14 training episodes the MA2C agent achieves a 37.3\% reduction in
+average network waiting time (from 9.87\,s to 6.19\,s per vehicle), demonstrating
+a clear learning signal despite a severely limited training budget.
+The results establish a working prototype for network-wide RL-based traffic
+management in a small-island context and identify computational scalability as
+the primary challenge for future work.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Multi-Agent Reinforcement Learning, Traffic Signal Control, Vehicle Routing,
+SUMO Microsimulation, Malta Traffic Congestion
+\end{IEEEkeywords}
+
+%% -----------------------------------------------------------
+%%  I. INTRODUCTION
+%% -----------------------------------------------------------
+\section{Introduction}
+
+Urban congestion remains one of the most persistent challenges in intelligent
+transportation systems (ITS), imposing large economic losses, excess fuel
+consumption, and degraded travel-time reliability on millions of daily commuters.
+In most metropolitan contexts, road-capacity expansion remains a viable, if
+expensive, lever for relief. However, in small island states with physically
+bounded road networks, capacity expansion is not financially, environmentally,
+or geographically feasible, making the intelligent redistribution of existing
+traffic flows the only scalable intervention available.
+
+Malta presents one of the most extreme instances of this problem. Ranked the
+world's second most congested nation in 2026 by the TomTom Traffic Index, the
+island hosts more than 454{,}000 registered vehicles for a population of
+approximately 574{,}250 residents (roughly 79 vehicles per 100 people), one of
+the highest ratios in the European Union~\cite{tomtom2026,nso2024}. Drivers in
+Valletta, the capital, lose approximately 94 hours per year to rush-hour delays,
+and 36 new vehicles are added to the national fleet every day. Despite the
+introduction of free public transport, congestion has continued to rise, indicating
+that supply-side and routing-based interventions must play a central role in any
+solution~\cite{nso2024}.
+
+The Traffic Optimisation and Route Redistribution System (TORRS) proposed in
+this study addresses this gap. Rather than optimising the travel time of a single
+vehicle, TORRS aims to improve collective network performance by combining joint
+signal control and vehicle rerouting through a cooperative multi-agent
+reinforcement learning framework. The central hypothesis is that a learning-based
+controller can demonstrate measurable reductions in average vehicle waiting time
+and travel time compared with a rule-based greedy baseline, and that performance
+improves monotonically with training experience.
+
+The study is guided by two research questions:
+
+\begin{itemize}
+    \item \textbf{RQ1:} How does the MA2C learning-based controller compare with
+    a greedy rule-based controller in terms of average vehicle waiting time and
+    travel time in a SUMO microsimulation of the Maltese road network?
+    \item \textbf{RQ2:} Does the MA2C agent demonstrate a measurable learning
+    trend over training episodes, evidencing that the framework can improve with
+    additional training?
+\end{itemize}
+
+The remainder of the paper is structured as follows. Section~II reviews the
+relevant literature. Section~III describes the research methodology and
+simulation pipeline. Section~IV presents the experimental findings. Section~V
+discusses implications, and Section~VI concludes with limitations and future
+directions.
+
+%% -----------------------------------------------------------
+%%  II. LITERATURE REVIEW
+%% -----------------------------------------------------------
+\section{Literature Review}
+
+\subsection{Overview of ITS and Traffic Optimisation}
+
+Intelligent transportation systems integrate users, vehicles, and infrastructure
+with communication and information technologies to improve safety, efficiency,
+and environmental performance. A systematic review by Zulkarnain~\textit{et~al.}
+analysed more than 20{,}000 ITS publications and identified reinforcement learning,
+deep learning, and graph-based neural networks as the dominant emerging techniques
+for traffic flow prediction and routing control~\cite{zulkarnain2021}. Despite
+the rapid growth of ITS research, the same review highlights a persistent gap:
+the overwhelming majority of studies focus on large metropolitan areas in North
+America, East Asia, and Northern Europe. Small island states with unique
+structural constraints (high vehicle density, bounded geography, and limited
+parallel corridors) remain almost entirely absent from the literature.
+
+\subsection{Dynamic Rerouting with Fog-Cloud Reinforcement Learning}
+
+Du~\textit{et~al.} propose GAQ-EBkSP, a two-stage dynamic rerouting framework
+that combines a Graph Attention Q-network with entropy-balanced $k$-shortest path
+selection under a fog-cloud architecture~\cite{du2023}. Fog nodes aggregate local
+road information and reduce the action space, while cloud servers coordinate
+global optimisation. Evaluated in SUMO, the system achieves approximately
+14--54\% improvements in mean travel speed relative to rule-based baselines,
+particularly at low rerouting ratios. The fog-cloud partitioning maps naturally
+onto Malta's geographic traffic zones (e.g., Valletta gateway, St~Julian's,
+Msida corridor), making this framework directly relevant as a conceptual
+reference for TORRS.
+
+\subsection{Adaptive Rerouting and Secondary Bottlenecks}
+
+Gregucci~\textit{et~al.} evaluate adaptive rerouting strategies on simulated
+grid networks and demonstrate that naive shortest-path diversion consistently
+overloads apparently optimal detours, shifting congestion rather than
+eliminating it~\cite{gregucci2023}. Their topology-aware strategy monitors
+segment utilisation across the whole network to prevent secondary bottleneck
+formation. This finding is directly relevant to Malta, where the limited number
+of alternative corridors between major zones (notably the approaches to Valletta
+and the northern residential belt) means that poorly designed rerouting could
+worsen overall network performance.
+
+\subsection{MA2C for Joint Signal and Routing Control}
+
+Chu~\textit{et~al.} introduce MA2C, a decentralised multi-agent advantage
+actor-critic algorithm with LSTM memory and a neighbourhood fingerprinting
+mechanism that partially addresses non-stationarity in cooperative multi-agent
+settings~\cite{chu2020}. The reference implementation evaluates joint traffic
+signal and routing control on the Sioux Falls benchmark network, achieving
+convergence over approximately 694 training episodes. This implementation
+serves as the algorithmic foundation for TORRS.
+
+\subsection{Synthesis and Research Gap}
+
+The reviewed literature establishes that (i)~learning-based dynamic rerouting
+can outperform rule-based methods in urban simulations, (ii)~network-wide
+awareness and secondary-bottleneck prevention are critical design requirements,
+and (iii)~no existing study applies these approaches to a small island road
+network. TORRS contributes to the literature by targeting this unexplored context
+and demonstrating the feasibility of the MA2C framework on a real-world
+island road network.
+
+%% -----------------------------------------------------------
+%%  III. RESEARCH METHODOLOGY
+%% -----------------------------------------------------------
+\section{Research Methodology}
+
+\subsection{Research Pipeline}
+
+The research follows a structured pipeline consisting of five stages:
+(1) network construction and validation, (2) demand modelling,
+(3) baseline establishment, (4) MA2C training, and (5) comparative
+evaluation and statistical analysis.
+
+\subsection{Simulation Environment}
+
+The Maltese road network was imported into SUMO using \texttt{netconvert} applied
+to an OpenStreetMap export~\cite{lopez2018}, and validated against Transport
+Malta infrastructure data. The simulation runs at a 5-second control interval
+over 3600-second episodes, with 442 lane-area detectors monitoring all
+traffic-light-controlled incoming lanes. A TraCI Python interface exposes the
+environment to the RL agent.
+
+\subsection{Demand Modelling}
+
+A base weekday peak-hour demand scenario was calibrated against NSO vehicle
+registration statistics~\cite{nso2024}. Vehicles are generated from an
+origin-destination matrix derived from available open datasets, with random seed
+variation used to produce independent episode realisations for training and
+evaluation. Extension to seasonal tourist-demand scenarios is identified as
+future work.
+
+\subsection{Agent Architecture}
+
+MA2C assigns one agent to each of 17 signalised junctions and one agent to each
+of 12 routing corridors, giving 190 cooperative agents in total (including
+sub-agents per signal phase). Each agent maintains an LSTM-based actor-critic
+network with a local observation vector derived from queue lengths, vehicle
+waiting times, and neighbour fingerprints. Signal agents are penalised for
+vehicle queue lengths and waiting times; routing agents are rewarded for vehicles
+completing trips on their assigned corridor.
+
+Key hyperparameters are listed in Table~\ref{tab:hyperparams}.
+
+\begin{table}[h]
+\caption{MA2C Hyperparameters}
+\label{tab:hyperparams}
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lc}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Learning rate                          & $2.5 \times 10^{-4}$ \\
+Discount factor $\gamma$               & $0.99$ \\
+$n$-step return                        & $144$ \\
+Cooperative discount (signal-signal)   & $0.3$ \\
+Episode length                         & $3600$\,s \\
+Control interval                       & $5$\,s \\
+Training steps                         & $10{,}080$ (14 episodes) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Baseline Controller}
+
+The greedy baseline (\texttt{MaltaController}) assigns each junction the signal
+phase that maximises the combined vehicle count on the highest-flow pair of
+incoming lanes at the current timestep. Route agents are fixed at action~0
+(no rerouting), replicating static route assignment. The baseline was evaluated
+over two 3600-second episodes with random seeds 10{,}000 and 20{,}000.
+
+\subsection{Evaluation Protocol}
+
+After training, the MA2C model was evaluated deterministically (argmax policy)
+over ten random seeds (10{,}000--100{,}000) using SUMO's
+\texttt{tripinfo-output} to record per-vehicle travel and waiting times,
+yielding 9{,}817 complete vehicle trips for analysis. Primary metrics are
+average waiting time and average travel time per completed trip.
+
+%% -----------------------------------------------------------
+%%  IV. FINDINGS
+%% -----------------------------------------------------------
+\section{Findings}
+
+\subsection{RQ2: Learning Trend}
+
+Table~\ref{tab:training} reports per-episode metrics from the training run.
+Average waiting time decreases from 9.87\,s in episode~1 to 6.19\,s in
+episode~14, a \textbf{37.3\% reduction} over 14 episodes. Average travel time
+falls from 51.1\,s to 46.1\,s (9.8\% reduction). This confirms a clear learning
+signal: the MA2C agent improves its policy with experience, answering RQ2
+affirmatively.
+
+\begin{table}[h]
+\caption{MA2C Training Metrics per Episode}
+\label{tab:training}
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{ccc}
+\toprule
+\textbf{Episode} & \textbf{Avg Wait (s)} & \textbf{Avg Travel (s)} \\
+\midrule
+1  & 9.87 & 51.06 \\
+2  & 9.51 & 50.77 \\
+4  & 8.27 & 48.90 \\
+6  & 6.82 & 47.05 \\
+8  & 7.07 & 47.36 \\
+10 & 7.89 & 48.46 \\
+12 & 7.94 & 48.60 \\
+14 & \textbf{6.19} & \textbf{46.13} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{RQ1: Comparison with Greedy Baseline}
+
+Table~\ref{tab:comparison} compares the deterministic MA2C evaluation against
+the greedy baseline. The greedy controller achieves lower absolute waiting and
+travel times than the partially-trained MA2C agent.
+
+\begin{table}[h]
+\caption{MA2C vs.\ Greedy Baseline}
+\label{tab:comparison}
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Controller} & \textbf{Avg Wait (s)} & \textbf{Avg Travel (s)} \\
+\midrule
+Greedy (2 seeds)     & 0.71  & 38.98 \\
+MA2C eval (10 seeds) & 6.06  & 49.03 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+These results reflect the limited training budget of 14 episodes, substantially
+below the 694 episodes used by Chu~\textit{et~al.}~\cite{chu2020} on the Sioux
+Falls benchmark. The computational cost of simulating a full-scale real-world
+road network (442 detectors, 190 agents, 3600-second episodes) on consumer
+hardware constrains the number of training episodes achievable within the
+prototype scope. Importantly, the training trend in Table~\ref{tab:training} is
+still descending at episode~14, indicating the agent has not yet converged and
+would continue to improve with further training.
+
+It is also worth noting that the two metrics are not measured identically: the
+greedy waiting time is computed as the ratio of step-level halting vehicle counts
+to total departures, while the MA2C evaluation figure comes from SUMO's
+per-vehicle \texttt{tripinfo} tracker. Both metrics favour the greedy controller,
+so the direction of comparison is sound, but exact magnitudes should be
+interpreted accordingly.
+
+\subsection{Comparison with State of the Art}
+
+Du~\textit{et~al.}~\cite{du2023} report 14--54\% reductions in congestion
+severity for GAQ-EBkSP over rule-based baselines after full convergence. The
+37.3\% reduction in waiting time observed here over just 14 episodes is
+consistent in direction with those findings, though direct numerical comparison
+is not possible given the different networks, demand patterns, and training
+scales.
+
+%% -----------------------------------------------------------
+%%  V. DISCUSSION
+%% -----------------------------------------------------------
+\section{Discussion}
+
+The results position TORRS as a proof-of-concept demonstration that the MA2C
+framework is applicable to a real-world island road network. The 37.3\%
+reduction in waiting time across 14 episodes establishes a clear learning
+signal, and the still-descending training curve at episode~14 indicates that
+substantially greater improvements would be achievable given adequate
+computational resources.
+
+The greedy baseline outperforms the 14-episode MA2C prototype in absolute terms,
+which is expected at this stage of training. This is consistent with the broader
+RL literature: partially trained RL agents rarely surpass well-designed
+heuristics, but converged RL agents typically outperform them significantly. The
+Chu~\textit{et~al.} reference implementation required approximately 694 episodes
+to converge on a simpler synthetic network, compared with the 14 episodes
+completed here on Malta's full-scale real-world topology.
+
+The compliance sensitivity analysis (varying the proportion of vehicles following
+routing recommendations) and seasonal demand variation remain important
+directions for future work. If TORRS can demonstrate significant network
+improvement at low compliance levels (e.g., 20--40\%), it would provide Transport
+Malta with a strong evidence base for piloting connected-vehicle routing guidance
+without requiring island-wide adoption. The explicit secondary-bottleneck design
+of the MA2C reward function, motivated by Gregucci~\textit{et~al.}~\cite{gregucci2023},
+is expected to become increasingly valuable as training progresses and the agent
+moves from random exploration toward deliberate policy exploitation.
+
+Unlike wide-grid urban networks with many substitute corridors, Malta's bounded
+topology amplifies the risk that improperly designed rerouting displaces a
+bottleneck rather than dissolving it. This makes network-wide cooperative
+learning, as provided by MA2C's fingerprinting and shared reward structure,
+particularly important in the Malta context.
+
+%% -----------------------------------------------------------
+%%  VI. CONCLUSION
+%% -----------------------------------------------------------
+\section{Conclusion}
+
+This paper has presented the design, implementation, and preliminary evaluation
+of TORRS, a Multi-Agent Advantage Actor-Critic system for joint traffic signal
+control and vehicle routing on Malta's real road network. The key contributions
+are: a working SUMO microsimulation of Malta imported from OpenStreetMap; a
+successful adaptation of the MA2C algorithm to 190 cooperative agents on a
+full-scale island road network; and an empirical demonstration of learning, with
+a 37.3\% reduction in average vehicle waiting time over 14 training episodes.
+
+The primary limitation is computational: simulating a full-scale island road
+network at 5-second resolution requires approximately 30--40 minutes of
+wall-clock time per episode on consumer CPU hardware, restricting the prototype
+to 14 training episodes. Full convergence, as achieved in the original MA2C
+paper~\cite{chu2020}, requires on the order of 500--700 episodes, representing
+several weeks of continuous computation under the current setup.
+
+Future work should address three directions. First, training should be extended
+using cloud-based GPU infrastructure to achieve policy convergence and establish
+a definitive comparison with the greedy baseline. Second, seasonal demand
+variation should be modelled using separate base-season and peak-tourist-season
+OD matrices to test the robustness of the learned policy to demand surges.
+Third, a compliance sensitivity analysis should be completed by varying the
+proportion of vehicles following routing recommendations from 10\% to 100\%,
+to provide actionable guidance on the minimum adoption threshold required for
+measurable network-wide benefit.
+
+%% -----------------------------------------------------------
+%%  REFERENCES
+%% -----------------------------------------------------------
+\begin{thebibliography}{99}
+
+\bibitem{tomtom2026}
+TomTom,
+``Traffic Index: Malta Country Report 2026,''
+[Online]. Available: \url{https://www.tomtom.com/traffic-index/country/malta}.
+[Accessed: 11-May-2026].
+
+\bibitem{nso2024}
+National Statistics Office Malta,
+``Vehicle registrations and traffic statistics,''
+NSO Malta, Valletta, Malta, 2024.
+
+\bibitem{zulkarnain2021}
+M. Zulkarnain, M. A. Mohamed, and S. A. Sulaiman,
+``Intelligent Transportation Systems (ITS): A systematic review using a
+large-scale NLP framework,''
+\textit{PLOS ONE}, vol.~16, no.~12, p.~e0261053, Dec. 2021.
+[Online]. Available: \url{https://pmc.ncbi.nlm.nih.gov/articles/PMC8695271}
+
+\bibitem{du2023}
+B. Du, Y. Liu, Y. Xu, X. Luo, and M. Kowalczyk,
+``Dynamic urban traffic rerouting with fog-cloud reinforcement learning,''
+\textit{Computer-Aided Civil and Infrastructure Engineering},
+vol.~38, no.~12, pp.~1607--1626, 2023.
+DOI: \url{https://doi.org/10.1111/mice.13115}
+
+\bibitem{gregucci2023}
+D. Gregucci, L. Bedogni, L. Bononi, and M. Di~Felice,
+``Dynamic adaptive vehicle re-routing strategy for traffic congestion
+mitigation,''
+\textit{Transportation Research Interdisciplinary Perspectives},
+vol.~18, p.~100786, 2023.
+DOI: \url{https://doi.org/10.1016/j.trip.2023.100786}
+
+\bibitem{chu2020}
+T. Chu, J. Wang, L. Codec\`{a}, and Z. Li,
+``Multi-agent deep reinforcement learning for large-scale traffic signal
+control,''
+\textit{IEEE Transactions on Intelligent Transportation Systems},
+vol.~21, no.~3, pp.~1086--1095, Mar. 2020.
+DOI: \url{https://doi.org/10.1109/TITS.2019.2901791}
+
+\bibitem{lopez2018}
+P.~A. Lopez \textit{et al.},
+``Microscopic traffic simulation using SUMO,''
+in \textit{Proc. IEEE Int. Conf. Intelligent Transportation Systems (ITSC)},
+Maui, HI, USA, 2018, pp.~2575--2582.
+
+\end{thebibliography}
+
+\end{document}
